@@ -6,6 +6,7 @@ It allows developers to capture fingerprint images, generate templates (ISO/ANSI
 ---
 
 ## ✨ Features
+
 - Open and close the fingerprint device
 - Capture fingerprint images
 - Generate **ISO** and **ANSI** templates
@@ -15,7 +16,7 @@ It allows developers to capture fingerprint images, generate templates (ISO/ANSI
 ---
 
 ## 📦 Installation
-
+go
 Add the dependency in your Flutter project:
 
 ```yaml
@@ -25,6 +26,7 @@ dependencies:
 ```
 
 Then run:
+
 ```yaml
 flutter pub get
 ```
@@ -34,11 +36,13 @@ flutter pub get
 🚀 Usage
 
 Import the plugin:
+
 ```yaml
 import 'package:fingerprint_sdk/fingerprint_sdk.dart';
 ```
 
 Example
+
 ```yaml
 final sdk = FingerprintSdk();
 
@@ -64,11 +68,12 @@ print("Match Score: $score");
 
 // Close device
 await sdk.closeDevice();
-
  ```
+
 ⸻
 
 ## 📂 Project Structure
+
 ```yaml
 fingerprint_sdk/
 ├─ .dart_tool/
@@ -142,6 +147,7 @@ fingerprint_sdk/
 ├─ pubspec.yaml
 └─ README.md
 ```
+
 ⸻
 
 ## ⚙️ API Reference
@@ -156,10 +162,12 @@ fingerprint_sdk/
 | `closeDevice()`        | none                     | `Future<int?>`   | Closes the fingerprint device.                   |
 
 ## 🔧 Platform Support
+
 - Android: Implemented via `FingerprintSdkPlugin.java`
 - iOS: Implementation pending (Swift/Objective-C)
 
 ## 🛠 Development Notes
+
 - Ensure native SDK libraries required by your fingerprint hardware (such as `.so`, `.dll`, or `.framework` files) are correctly integrated into your Android/iOS projects.
 - This plugin communicates between Dart and native code using Flutter’s MethodChannel (`fingerprint_sdk`).
 - The ISO and ANSI templates are returned as Base64-encoded strings for easy storage and transmission.
