@@ -5,15 +5,16 @@ homepage: https://github.com/Drebyte/q818_fingerprint_plugin
 repository: https://github.com/Drebyte/q818_fingerprint_plugin
 issue_tracker: https://github.com/Drebyte/q818_fingerprint_plugin/issues
 documentation: https://github.com/Drebyte/q818_fingerprint_plugin#readme
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+  flutter: ">=3.3.0"
+
 topics:
   - fingerprint
   - biometrics
   - plugin
-  - Q818
-
-environment:
-  sdk: ">=3.3.0 <4.0.0"
-  flutter: ">=3.3.0"
+  - q818
 
 dependencies:
   flutter:
