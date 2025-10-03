@@ -16,7 +16,7 @@ It allows developers to capture fingerprint images, generate templates (ISO/ANSI
 ---
 
 ## 📦 Installation
-go
+
 Add the dependency in your Flutter project:
 
 ```yaml
