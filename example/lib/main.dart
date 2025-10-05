@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fingerprint_sdk/fingerprint_sdk.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+/// Example main.dart — Fingerprint SDK Plugin Demo
+/// This is a complete working example to guide developers
+/// integrating the FingerprintSdkPlugin into their Flutter app.
 
 void main() {
   runApp(const MyApp());
@@ -18,7 +22,7 @@ class _MyAppState extends State<MyApp> {
   String _output = 'Unknown';
   String _debugLog = '';
   bool _showDebug = false;
-  bool _simulatorMode = true; 
+  bool _simulatorMode = true;
   final _fingerprintSdk = FingerprintSdk();
 
   @override
@@ -28,6 +32,7 @@ class _MyAppState extends State<MyApp> {
     _initPlugin();
   }
 
+  /// Load saved simulator mode preference
   Future<void> _loadSimulatorMode() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     bool mode = prefs.getBool('simulatorMode') ?? true;
@@ -37,16 +42,18 @@ class _MyAppState extends State<MyApp> {
     await _fingerprintSdk.toggleSimulatorMode(mode);
   }
 
+  /// Save simulator mode preference
   Future<void> _saveSimulatorMode(bool value) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setBool('simulatorMode', value);
   }
 
+  /// Initialize plugin and check platform version
   Future<void> _initPlugin() async {
     String result;
     try {
-      result = await _fingerprintSdk.getPlatformVersion() ??
-          'Unknown platform version';
+      result =
+          await _fingerprintSdk.getPlatformVersion() ?? 'Unknown platform version';
     } on PlatformException {
       result = 'Failed to get platform version.';
     }
@@ -57,6 +64,7 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
+  /// Toggle simulator mode
   Future<void> _toggleSimulatorMode(bool value) async {
     await _fingerprintSdk.toggleSimulatorMode(value);
     await _saveSimulatorMode(value);
@@ -65,19 +73,23 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
+  /// Safe substring helper
   String safeSubstring(String? s, int end) {
     if (s == null) return "";
     return s.length >= end ? s.substring(0, end) : s;
   }
 
+  /// Run full fingerprint test
   Future<void> _runPluginTests() async {
     try {
       final device = await _fingerprintSdk.openDevice();
       final img = await _fingerprintSdk.captureImage();
       final iso = await _fingerprintSdk.createISOTemplate(img ?? "dummy_img");
       final ansi = await _fingerprintSdk.createANSITemplate(img ?? "dummy_img");
-      final score =
-          await _fingerprintSdk.compareTemplates(iso?['template'] ?? "", ansi?['template'] ?? "");
+      final score = await _fingerprintSdk.compareTemplates(
+        iso?['template'] ?? "",
+        ansi?['template'] ?? "",
+      );
       final closed = await _fingerprintSdk.closeDevice();
 
       String debug = """
@@ -108,6 +120,7 @@ Match Score: $score
     }
   }
 
+  /// Copy debug log to clipboard
   void _copyDebugLog() {
     Clipboard.setData(ClipboardData(text: _debugLog));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -115,6 +128,7 @@ Match Score: $score
     );
   }
 
+  /// Builds debug log view
   Widget _buildDebugLog() {
     List<String> lines = _debugLog.split("\n");
     return ListView.builder(
@@ -157,7 +171,7 @@ Match Score: $score
     return MaterialApp(
       home: Scaffold(
         appBar: AppBar(
-          title: const Text('Fingerprint SDK Test'),
+          title: const Text('Fingerprint SDK Example'),
         ),
         body: Padding(
           padding: const EdgeInsets.all(16),
@@ -192,9 +206,7 @@ Match Score: $score
                     children: [
                       IconButton(
                         icon: Icon(
-                          _showDebug
-                              ? Icons.expand_less
-                              : Icons.expand_more,
+                          _showDebug ? Icons.expand_less : Icons.expand_more,
                         ),
                         onPressed: () {
                           setState(() {
