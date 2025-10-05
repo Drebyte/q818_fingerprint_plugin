@@ -53,4 +53,35 @@ class FingerprintSdk {
   Future<void> toggleSimulatorMode(bool enable) async {
     await _channel.invokeMethod('toggleSimulatorMode', {"enable": enable});
   }
+
+  Future<Map<String, dynamic>?> verifyFingerprint(String regId, int secLevel, bool checkLive) async {
+    final res = await _channel.invokeMethod('verifyFingerprint', {
+      "regId": regId,
+      "secLevel": secLevel,
+      "checkLive": checkLive,
+    });
+    if (res is Map) {
+      return Map<String, dynamic>.from(res);
+    }
+    return null;
+  }
+
+  Future<Map<String, dynamic>?> searchFingerprint(int secLevel, bool checkLive) async {
+    final res = await _channel.invokeMethod('searchFingerprint', {
+      "secLevel": secLevel,
+      "checkLive": checkLive,
+    });
+    if (res is Map) {
+      return Map<String, dynamic>.from(res);
+    }
+    return null;
+  }
+
+  Future<bool?> deleteRecord(String regId) async {
+    return await _channel.invokeMethod<bool>('deleteRecord', {"regId": regId});
+  }
+
+  Future<void> refreshDatabase() async {
+    await _channel.invokeMethod('refreshDatabase');
+  }
 }

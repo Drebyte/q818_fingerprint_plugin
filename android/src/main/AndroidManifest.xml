@@ -1,17 +1,47 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.example.fingerprint_sdk">
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.drebyte.fingerprint_sdk">
 
     <!-- Declare required hardware -->
     <uses-feature android:name="android.hardware.usb.host" />
 
     <!-- Permissions -->
-    <uses-permission android:name="android.permission.USB_PERMISSION"/>
-    <uses-permission android:name="android.permission.INTERNET"/>
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.MOUNT_UNMOUNT_FILESYSTEMS" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.MOUNT_FORMAT_FILESYSTEMS" />
+    <uses-permission android:name="android.permission.SET_DEBUG_APP" />
+    <uses-permission android:name="com.HZFINGER.USB_PERMISSION"/>
 
-    <application>
-        <!-- If you need to declare your activity later, it will go here -->
+    <application
+        android:label="fingerprint_sdk_example"
+        tools:replace="android:label"
+        android:icon="@mipmap/ic_launcher"
+        android:allowBackup="true"
+        android:supportsRtl="true">
+
+        <!-- Main Activity for Example App -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Fingerprint SDK Plugin Activity -->
+        <activity
+            android:name="com.drebyte.fingerprint_sdk.fingerprint_sdk"
+            android:exported="true">
+            
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+        </activity>
+
     </application>
-
 </manifest>
