@@ -1,6 +1,6 @@
-# Fingerprint SDK Plugin for Flutter
+# Q818 Device Fingerprint SDK Plugin for Flutter
 
-This Flutter plugin provides a simple bridge to native fingerprint hardware SDKs using **Platform Channels**.  
+This Flutter plugin provides a simple bridge to native Q818 fingerprint hardware SDKs using **Platform Channels**.  
 It allows developers to capture fingerprint images, generate templates (ISO/ANSI), and perform template matching.  
 
 ---

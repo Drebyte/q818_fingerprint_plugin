@@ -1,4 +1,4 @@
-package com.example.fingerprint_sdk;
+package com.drebyte.fingerprint_sdk;
 
 import androidx.annotation.NonNull;
 import android.app.Activity;
