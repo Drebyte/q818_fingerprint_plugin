@@ -3,10 +3,6 @@ import 'package:flutter/services.dart';
 import 'package:fingerprint_sdk/fingerprint_sdk.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Example main.dart — Fingerprint SDK Plugin Demo
-/// This is a complete working example to guide developers
-/// integrating the FingerprintSdkPlugin into their Flutter app.
-
 void main() {
   runApp(const MyApp());
 }
@@ -24,15 +20,14 @@ class _MyAppState extends State<MyApp> {
   bool _showDebug = false;
   bool _simulatorMode = true;
   final _fingerprintSdk = FingerprintSdk();
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    _loadSimulatorMode();
-    _initPlugin();
+    _loadSimulatorMode().then((_) => _initPlugin());
   }
 
-  /// Load saved simulator mode preference
   Future<void> _loadSimulatorMode() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     bool mode = prefs.getBool('simulatorMode') ?? true;
@@ -42,18 +37,15 @@ class _MyAppState extends State<MyApp> {
     await _fingerprintSdk.toggleSimulatorMode(mode);
   }
 
-  /// Save simulator mode preference
   Future<void> _saveSimulatorMode(bool value) async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.setBool('simulatorMode', value);
   }
 
-  /// Initialize plugin and check platform version
   Future<void> _initPlugin() async {
     String result;
     try {
-      result =
-          await _fingerprintSdk.getPlatformVersion() ?? 'Unknown platform version';
+      result = await _fingerprintSdk.getPlatformVersion() ?? 'Unknown platform version';
     } on PlatformException {
       result = 'Failed to get platform version.';
     }
@@ -64,52 +56,58 @@ class _MyAppState extends State<MyApp> {
     });
   }
 
-  /// Toggle simulator mode
   Future<void> _toggleSimulatorMode(bool value) async {
     await _fingerprintSdk.toggleSimulatorMode(value);
     await _saveSimulatorMode(value);
     setState(() {
       _simulatorMode = value;
+      _output = "Simulator Mode: ${value ? "Enabled" : "Disabled"}";
     });
   }
 
-  /// Safe substring helper
   String safeSubstring(String? s, int end) {
     if (s == null) return "";
     return s.length >= end ? s.substring(0, end) : s;
   }
 
-  /// Run full fingerprint test
   Future<void> _runPluginTests() async {
     try {
       final device = await _fingerprintSdk.openDevice();
+      if (device == null) {
+        setState(() => _output = "Failed to open device");
+        return;
+      }
+
       final img = await _fingerprintSdk.captureImage();
-      final iso = await _fingerprintSdk.createISOTemplate(img ?? "dummy_img");
-      final ansi = await _fingerprintSdk.createANSITemplate(img ?? "dummy_img");
+      if (img == null) {
+        setState(() => _output = "Failed to capture fingerprint image");
+        return;
+      }
+
+      final iso = await _fingerprintSdk.createISOTemplate(img);
+      final ansi = await _fingerprintSdk.createANSITemplate(img);
       final score = await _fingerprintSdk.compareTemplates(
-        iso?['template'] ?? "",
-        ansi?['template'] ?? "",
+        iso != null && iso.containsKey('template') ? iso['template']! : "",
+        ansi != null && ansi.containsKey('template') ? ansi['template']! : "",
       );
-      final closed = await _fingerprintSdk.closeDevice();
 
       String debug = """
 Simulator Mode: $_simulatorMode
-Device Handle: ${device?['handle']}
-Hardware Available: ${device?['hardwareAvailable']}
+Device Handle: ${device['handle']}
+Hardware Available: ${device['hardwareAvailable']}
 Captured Image: ${safeSubstring(img, 50)}
 ISO Template: ${safeSubstring(iso?['template'], 50)}
 ISO Mode: ${iso?['mode']}
 ANSI Template: ${safeSubstring(ansi?['template'], 50)}
 ANSI Mode: ${ansi?['mode']}
 Match Score: $score
-Close Result: $closed
 """;
 
       setState(() {
         _debugLog = debug;
         _output = """
 Simulator Mode: $_simulatorMode
-Device Handle: ${device?['handle']}
+Device Handle: ${device['handle']}
 Match Score: $score
 """;
       });
@@ -120,7 +118,11 @@ Match Score: $score
     }
   }
 
-  /// Copy debug log to clipboard
+  Future<void> _closeDevice() async {
+    final result = await _fingerprintSdk.closeDevice();
+    setState(() => _output = "Device closed: $result");
+  }
+
   void _copyDebugLog() {
     Clipboard.setData(ClipboardData(text: _debugLog));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -128,10 +130,10 @@ Match Score: $score
     );
   }
 
-  /// Builds debug log view
   Widget _buildDebugLog() {
     List<String> lines = _debugLog.split("\n");
     return ListView.builder(
+      controller: _scrollController,
       itemCount: lines.length,
       itemBuilder: (context, index) {
         String line = lines[index];
@@ -190,39 +192,34 @@ Match Score: $score
                 style: const TextStyle(fontSize: 16),
               ),
               const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: _runPluginTests,
-                child: const Text("Run Plugin Test"),
-              ),
-              const SizedBox(height: 20),
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    "Debug Log:",
-                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ElevatedButton(
+                    onPressed: _runPluginTests,
+                    child: const Text("Run Plugin Test"),
                   ),
-                  Row(
-                    children: [
-                      IconButton(
-                        icon: Icon(
-                          _showDebug ? Icons.expand_less : Icons.expand_more,
-                        ),
-                        onPressed: () {
-                          setState(() {
-                            _showDebug = !_showDebug;
-                          });
-                        },
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.copy),
-                        tooltip: "Copy Debug Log",
-                        onPressed: _copyDebugLog,
-                      ),
-                    ],
+                  const SizedBox(width: 10),
+                  ElevatedButton(
+                    onPressed: _closeDevice,
+                    child: const Text("Close Device"),
+                  ),
+                  const SizedBox(width: 10),
+                  IconButton(
+                    icon: const Icon(Icons.copy),
+                    tooltip: "Copy Debug Log",
+                    onPressed: _copyDebugLog,
+                  ),
+                  IconButton(
+                    icon: Icon(_showDebug ? Icons.expand_less : Icons.expand_more),
+                    onPressed: () {
+                      setState(() {
+                        _showDebug = !_showDebug;
+                      });
+                    },
                   ),
                 ],
               ),
+              const SizedBox(height: 20),
               Expanded(
                 child: AnimatedSize(
                   duration: const Duration(milliseconds: 300),
@@ -242,6 +239,14 @@ Match Score: $score
                 ),
               ),
             ],
+          ),
+        ),
+        floatingActionButton: FloatingActionButton(
+          child: const Icon(Icons.arrow_upward),
+          onPressed: () => _scrollController.animateTo(
+            0,
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeInOut,
           ),
         ),
       ),
