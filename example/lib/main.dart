@@ -1,253 +1,164 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:fingerprint_sdk/fingerprint_sdk.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:ui';
 
-void main() {
+import 'package:flutter/material.dart';
+import 'package:fingerprint_sdk/fingerprint_sdk.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // 🔹 Catch Flutter errors
+  FlutterError.onError = (FlutterErrorDetails details) {
+    debugPrint('❌ FlutterError: ${details.exception}');
+    debugPrint('Stack trace:\n${details.stack}');
+  };
+
+  // 🔹 Catch all async errors
+  PlatformDispatcher.instance.onError = (error, stack) {
+    debugPrint('🚨 Uncaught async error: $error');
+    debugPrint('Stack trace:\n$stack');
+    return true;
+  };
+
+  debugPrint('🚀 App starting... preparing to launch SDK Demo');
+
   runApp(const MyApp());
 }
 
-class MyApp extends StatefulWidget {
+class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  Widget build(BuildContext context) {
+    debugPrint('🧩 Building MyApp widget');
+    return MaterialApp(
+      title: 'Fingerprint SDK Demo',
+      theme: ThemeData(primarySwatch: Colors.blue),
+      home: const FingerprintDemoPage(),
+    );
+  }
 }
 
-class _MyAppState extends State<MyApp> {
-  String _output = 'Unknown';
-  String _debugLog = '';
-  bool _showDebug = false;
-  bool _simulatorMode = true;
-  final _fingerprintSdk = FingerprintSdk();
-  final ScrollController _scrollController = ScrollController();
+class FingerprintDemoPage extends StatefulWidget {
+  const FingerprintDemoPage({super.key});
+
+  @override
+  FingerprintDemoPageState createState() => FingerprintDemoPageState();
+}
+
+class FingerprintDemoPageState extends State<FingerprintDemoPage> {
+  String _status = "Launching...";
+  bool _isSimulator = true;
+  String? _captureImageBase64;
+  Map<String, String>? _isoTemplate;
+  Map<String, String>? _ansiTemplate;
 
   @override
   void initState() {
     super.initState();
-    _loadSimulatorMode().then((_) => _initPlugin());
+    debugPrint('🔧 FingerprintDemoPageState initialized');
+    _initializeSdk();
   }
 
-  Future<void> _loadSimulatorMode() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    bool mode = prefs.getBool('simulatorMode') ?? true;
-    setState(() {
-      _simulatorMode = mode;
-    });
-    await _fingerprintSdk.toggleSimulatorMode(mode);
-  }
+  Future<void> _initializeSdk() async {
+    debugPrint('🧠 Starting SDK initialization (simulator=$_isSimulator)...');
+    setState(() => _status = "Initializing SDK...");
 
-  Future<void> _saveSimulatorMode(bool value) async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('simulatorMode', value);
-  }
-
-  Future<void> _initPlugin() async {
-    String result;
     try {
-      result = await _fingerprintSdk.getPlatformVersion() ?? 'Unknown platform version';
-    } on PlatformException {
-      result = 'Failed to get platform version.';
-    }
-
-    if (!mounted) return;
-    setState(() {
-      _output = "Platform Version: $result";
-    });
-  }
-
-  Future<void> _toggleSimulatorMode(bool value) async {
-    await _fingerprintSdk.toggleSimulatorMode(value);
-    await _saveSimulatorMode(value);
-    setState(() {
-      _simulatorMode = value;
-      _output = "Simulator Mode: ${value ? "Enabled" : "Disabled"}";
-    });
-  }
-
-  String safeSubstring(String? s, int end) {
-    if (s == null) return "";
-    return s.length >= end ? s.substring(0, end) : s;
-  }
-
-  Future<void> _runPluginTests() async {
-    try {
-      final device = await _fingerprintSdk.openDevice();
-      if (device == null) {
-        setState(() => _output = "Failed to open device");
-        return;
-      }
-
-      final img = await _fingerprintSdk.captureImage();
-      if (img == null) {
-        setState(() => _output = "Failed to capture fingerprint image");
-        return;
-      }
-
-      final iso = await _fingerprintSdk.createISOTemplate(img);
-      final ansi = await _fingerprintSdk.createANSITemplate(img);
-      final score = await _fingerprintSdk.compareTemplates(
-        iso != null && iso.containsKey('template') ? iso['template']! : "",
-        ansi != null && ansi.containsKey('template') ? ansi['template']! : "",
-      );
-
-      String debug = """
-Simulator Mode: $_simulatorMode
-Device Handle: ${device['handle']}
-Hardware Available: ${device['hardwareAvailable']}
-Captured Image: ${safeSubstring(img, 50)}
-ISO Template: ${safeSubstring(iso?['template'], 50)}
-ISO Mode: ${iso?['mode']}
-ANSI Template: ${safeSubstring(ansi?['template'], 50)}
-ANSI Mode: ${ansi?['mode']}
-Match Score: $score
-""";
-
+      final initialized = await FingerprintSdk.initialize(simulator: true);
+      debugPrint('✅ SDK initialize() returned: $initialized');
       setState(() {
-        _debugLog = debug;
-        _output = """
-Simulator Mode: $_simulatorMode
-Device Handle: ${device['handle']}
-Match Score: $score
-""";
+        _isSimulator = true;
+        _status = initialized
+            ? "SDK Initialized (Simulator Mode)"
+            : "SDK Initialization Failed";
       });
-    } catch (e) {
-      setState(() {
-        _output = "Error running plugin tests: $e";
-      });
+    } catch (e, stack) {
+      debugPrint('❌ Error during SDK initialization: $e');
+      debugPrint('Stack trace:\n$stack');
+      setState(() => _status = "Error initializing SDK: $e");
     }
   }
 
-  Future<void> _closeDevice() async {
-    final result = await _fingerprintSdk.closeDevice();
-    setState(() => _output = "Device closed: $result");
+  Future<void> _captureImage() async {
+    debugPrint('📸 Capture fingerprint triggered');
+    if (_isSimulator) {
+      debugPrint('🧪 Simulator mode active, simulating capture');
+      setState(() {
+        _captureImageBase64 = "SIMULATED_IMAGE_BASE64";
+        _status = "Simulator: Fingerprint image captured.";
+      });
+      return;
+    }
+
+    try {
+      setState(() => _status = "Capturing fingerprint...");
+      final imageBase64 = await FingerprintSdk.captureImage();
+      debugPrint('📷 Capture result: ${imageBase64 != null ? "OK" : "NULL"}');
+      setState(() {
+        _captureImageBase64 = imageBase64;
+        _status =
+            imageBase64 != null ? "Fingerprint captured" : "Capture failed";
+      });
+    } catch (e, stack) {
+      debugPrint('❌ Error capturing fingerprint: $e');
+      debugPrint('Stack trace:\n$stack');
+      setState(() => _status = "Error capturing fingerprint: $e");
+    }
   }
 
-  void _copyDebugLog() {
-    Clipboard.setData(ClipboardData(text: _debugLog));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text("Debug log copied to clipboard")),
-    );
-  }
+  Future<void> _createTemplates() async {
+    debugPrint('🧩 Creating fingerprint templates');
+    if (_captureImageBase64 == null) {
+      setState(() => _status = "No fingerprint image captured");
+      return;
+    }
 
-  Widget _buildDebugLog() {
-    List<String> lines = _debugLog.split("\n");
-    return ListView.builder(
-      controller: _scrollController,
-      itemCount: lines.length,
-      itemBuilder: (context, index) {
-        String line = lines[index];
-        bool isLabel = line.contains(":");
+    try {
+      if (_isSimulator) {
+        debugPrint('🧪 Simulator: generating fake templates');
+        _isoTemplate = {'template': 'SIMULATED_ISO_TEMPLATE'};
+        _ansiTemplate = {'template': 'SIMULATED_ANSI_TEMPLATE'};
+        setState(() => _status = "Templates created (Simulator)");
+        return;
+      }
 
-        return Container(
-          color: index % 2 == 0 ? Colors.grey.shade100 : Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-          child: isLabel
-              ? RichText(
-                  text: TextSpan(
-                    children: [
-                      TextSpan(
-                        text: line.split(":")[0] + ": ",
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.blue,
-                        ),
-                      ),
-                      TextSpan(
-                        text: line.substring(line.indexOf(":") + 1).trim(),
-                        style: const TextStyle(
-                          color: Colors.black87,
-                        ),
-                      ),
-                    ],
-                  ),
-                )
-              : Text(line),
-        );
-      },
-    );
+      setState(() => _status = "Creating templates...");
+      _isoTemplate = await FingerprintSdk.createISOTemplate(_captureImageBase64!);
+      _ansiTemplate = await FingerprintSdk.createANSITemplate(_captureImageBase64!);
+      debugPrint('✅ Templates created successfully');
+      setState(() => _status = "Templates created successfully");
+    } catch (e, stack) {
+      debugPrint('❌ Error creating templates: $e');
+      debugPrint('Stack trace:\n$stack');
+      setState(() => _status = "Error creating templates: $e");
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: Scaffold(
-        appBar: AppBar(
-          title: const Text('Fingerprint SDK Example'),
-        ),
-        body: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              SwitchListTile(
-                title: const Text("Simulator Mode"),
-                subtitle: const Text("Toggle between real hardware and simulation"),
-                value: _simulatorMode,
-                onChanged: _toggleSimulatorMode,
-              ),
-              const SizedBox(height: 10),
-              Text(
-                _output,
-                style: const TextStyle(fontSize: 16),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                children: [
-                  ElevatedButton(
-                    onPressed: _runPluginTests,
-                    child: const Text("Run Plugin Test"),
-                  ),
-                  const SizedBox(width: 10),
-                  ElevatedButton(
-                    onPressed: _closeDevice,
-                    child: const Text("Close Device"),
-                  ),
-                  const SizedBox(width: 10),
-                  IconButton(
-                    icon: const Icon(Icons.copy),
-                    tooltip: "Copy Debug Log",
-                    onPressed: _copyDebugLog,
-                  ),
-                  IconButton(
-                    icon: Icon(_showDebug ? Icons.expand_less : Icons.expand_more),
-                    onPressed: () {
-                      setState(() {
-                        _showDebug = !_showDebug;
-                      });
-                    },
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Expanded(
-                child: AnimatedSize(
-                  duration: const Duration(milliseconds: 300),
-                  curve: Curves.easeInOut,
-                  child: _showDebug
-                      ? Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.grey[200],
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: _debugLog.isEmpty
-                              ? const Text("No debug log available.")
-                              : _buildDebugLog(),
-                        )
-                      : const SizedBox.shrink(),
-                ),
-              ),
-            ],
-          ),
-        ),
-        floatingActionButton: FloatingActionButton(
-          child: const Icon(Icons.arrow_upward),
-          onPressed: () => _scrollController.animateTo(
-            0,
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
-          ),
+    debugPrint('🧱 Building FingerprintDemoPage UI');
+    return Scaffold(
+      appBar: AppBar(title: const Text("Fingerprint SDK Demo")),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Status: $_status"),
+            const SizedBox(height: 20),
+            ElevatedButton(
+              onPressed: _initializeSdk,
+              child: const Text("Re-Initialize SDK (Simulator)"),
+            ),
+            ElevatedButton(
+              onPressed: _captureImage,
+              child: const Text("Capture Image"),
+            ),
+            ElevatedButton(
+              onPressed: _createTemplates,
+              child: const Text("Create Templates"),
+            ),
+          ],
         ),
       ),
     );

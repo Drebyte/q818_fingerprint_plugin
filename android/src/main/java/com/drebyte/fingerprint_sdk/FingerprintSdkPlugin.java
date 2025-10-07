@@ -1,75 +1,59 @@
 package com.drebyte.fingerprint_sdk;
 
-import androidx.annotation.NonNull;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
-import android.Manifest;
 import android.app.Activity;
-import android.content.pm.PackageManager;
-import android.os.Handler;
-import android.os.Looper;
+import android.os.Build;
 import android.util.Base64;
 import android.util.Log;
 
-import com.HZFINGER.HostUsb;
-import com.HZFINGER.HAPI;
+import androidx.annotation.NonNull;
 
 import java.util.HashMap;
 import java.util.Map;
 
+import com.HZFINGER.HostUsb;
+import com.HZFINGER.LAPI;
+
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding;
+import io.flutter.plugin.common.EventChannel;
 import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 
 public class FingerprintSdkPlugin implements FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
-    private MethodChannel channel;
-    private Activity activity;
-    private boolean simulatorMode = true;
-    private long deviceHandle = 0L;
     private static final String TAG = "FingerprintSdkPlugin";
 
-    private HostUsb mHostUsb;
-    private HAPI mHapi;
-
-    private static final int REQUEST_CODE_PERMISSIONS = 101;
-    private static final String[] REQUIRED_PERMISSIONS = new String[]{
-            Manifest.permission.WRITE_EXTERNAL_STORAGE,
-            Manifest.permission.READ_EXTERNAL_STORAGE
-    };
+    private MethodChannel methodChannel;
+    private EventChannel eventChannel;
+    private Activity activity;
+    private static LAPI lapi;
+    private boolean simulator = false;
 
     @Override
-    public void onAttachedToEngine(@NonNull FlutterPlugin.FlutterPluginBinding binding) {
-        channel = new MethodChannel(binding.getBinaryMessenger(), "fingerprint_sdk");
-        channel.setMethodCallHandler(this);
-    }
+    public void onAttachedToEngine(@NonNull FlutterPluginBinding binding) {
+        methodChannel = new MethodChannel(binding.getBinaryMessenger(), "fingerprint_sdk");
+        methodChannel.setMethodCallHandler(this);
 
-    @Override
-    public void onDetachedFromEngine(@NonNull FlutterPlugin.FlutterPluginBinding binding) {
-        channel.setMethodCallHandler(null);
-    }
-
-    @Override
-    public void onAttachedToActivity(@NonNull ActivityPluginBinding binding) {
-        activity = binding.getActivity();
-        requestPermissions();
-
-        mHapi = new HAPI(activity, new Handler(Looper.getMainLooper()));
-        mHostUsb = new HostUsb(activity);
-    }
-
-    private void requestPermissions() {
-        boolean allGranted = true;
-        for (String permission : REQUIRED_PERMISSIONS) {
-            if (ContextCompat.checkSelfPermission(activity, permission) != PackageManager.PERMISSION_GRANTED) {
-                allGranted = false;
-                break;
+        eventChannel = new EventChannel(binding.getBinaryMessenger(), "fingerprint_sdk/events");
+        eventChannel.setStreamHandler(new EventChannel.StreamHandler() {
+            @Override
+            public void onListen(Object arguments, EventChannel.EventSink events) {
+                // Could send events from hardware here
             }
-        }
-        if (!allGranted) {
-            ActivityCompat.requestPermissions(activity, REQUIRED_PERMISSIONS, REQUEST_CODE_PERMISSIONS);
-        }
+            @Override
+            public void onCancel(Object arguments) {}
+        });
+    }
+
+    @Override
+    public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
+        methodChannel.setMethodCallHandler(null);
+    }
+
+    @Override
+    public void onAttachedToActivity(ActivityPluginBinding binding) {
+        activity = binding.getActivity();
+        lapi = new LAPI(activity);
     }
 
     @Override
@@ -78,36 +62,35 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodChannel.Method
     }
 
     @Override
-    public void onReattachedToActivityForConfigChanges(@NonNull ActivityPluginBinding binding) {
-        onAttachedToActivity(binding);
+    public void onReattachedToActivityForConfigChanges(ActivityPluginBinding binding) {
+        activity = binding.getActivity();
+        lapi = new LAPI(activity);
     }
 
     @Override
     public void onDetachedFromActivity() {
-        closeDevice();
         activity = null;
     }
 
     @Override
-    public void onMethodCall(@NonNull MethodCall call, @NonNull MethodChannel.Result result) {
+    public void onMethodCall(MethodCall call, MethodChannel.Result result) {
         try {
             switch (call.method) {
-                case "getPlatformVersion":
-                    result.success("Android " + android.os.Build.VERSION.RELEASE);
+                case "initialize":
+                    simulator = call.argument("simulator");
+                    result.success(initialize(simulator));
                     break;
 
-                case "toggleSimulatorMode":
-                    Boolean enable = call.argument("enable");
-                    if (enable != null) {
-                        simulatorMode = enable;
-                        result.success(true);
-                    } else {
-                        result.error("ARG_ERROR", "Missing 'enable' argument", null);
-                    }
+                case "getPlatformVersion":
+                    result.success("Android " + Build.VERSION.RELEASE);
                     break;
 
                 case "openDevice":
                     result.success(openDevice());
+                    break;
+
+                case "closeDevice":
+                    result.success(closeDevice());
                     break;
 
                 case "captureImage":
@@ -115,44 +98,26 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodChannel.Method
                     break;
 
                 case "createISOTemplate":
-                    result.success(createTemplate("ISO", call.argument("image")));
+                    String isoBase64 = call.argument("imageBase64");
+                    result.success(createTemplate(isoBase64, true));
                     break;
 
                 case "createANSITemplate":
-                    result.success(createTemplate("ANSI", call.argument("image")));
-                    break;
-
-                case "compareTemplates":
-                    result.success(compareTemplates(call.argument("t1"), call.argument("t2")));
+                    String ansiBase64 = call.argument("imageBase64");
+                    result.success(createTemplate(ansiBase64, false));
                     break;
 
                 case "verifyFingerprint":
-                    result.success(verifyFingerprint(
-                            call.argument("regId"),
-                            call.argument("secLevel"),
-                            call.argument("checkLive")
-                    ));
+                    String regId = call.argument("regId");
+                    int secLevel = call.argument("secLevel");
+                    boolean checkLive = call.argument("checkLive");
+                    result.success(verifyFingerprint(regId, secLevel, checkLive));
                     break;
 
                 case "searchFingerprint":
-                    result.success(searchFingerprint(
-                            call.argument("secLevel"),
-                            call.argument("checkLive")
-                    ));
-                    break;
-
-                case "deleteRecord":
-                    result.success(deleteRecord(call.argument("regId")));
-                    break;
-
-                case "refreshDatabase":
-                    refreshDatabase();
-                    result.success(true);
-                    break;
-
-                case "closeDevice":
-                    closeDevice();
-                    result.success(true);
+                    int level = call.argument("secLevel");
+                    boolean live = call.argument("checkLive");
+                    result.success(searchFingerprint(level, live));
                     break;
 
                 default:
@@ -160,158 +125,76 @@ public class FingerprintSdkPlugin implements FlutterPlugin, MethodChannel.Method
                     break;
             }
         } catch (Exception e) {
-            result.error("PLUGIN_EXCEPTION", e.getMessage(), null);
+            Log.e(TAG, "Error: " + e.getMessage());
+            result.error("ERROR", e.getMessage(), null);
         }
+    }
+
+    private boolean initialize(boolean simulatorMode) {
+        this.simulator = simulatorMode;
+        Log.i(TAG, "Fingerprint SDK initialized in " + (simulator ? "SIMULATOR" : "HARDWARE") + " mode");
+        return true;
     }
 
     private Map<String, Object> openDevice() {
-        Map<String, Object> deviceInfo = new HashMap<>();
-
-        if (simulatorMode) {
-            deviceHandle = 12345L; // Simulator dummy
-            deviceInfo.put("handle", deviceHandle);
-            deviceInfo.put("hardwareAvailable", false);
-        } else {
-            try {
-                if (mHapi != null) {
-                    deviceHandle = mHapi.openDevice();
-                } else if (mHostUsb != null) {
-                    deviceHandle = mHostUsb.open();
-                }
-
-                boolean hardwareAvailable = deviceHandle != 0;
-                deviceInfo.put("handle", deviceHandle);
-                deviceInfo.put("hardwareAvailable", hardwareAvailable);
-
-            } catch (Exception e) {
-                Log.e(TAG, "Error opening device: " + e.getMessage());
-                deviceInfo.put("handle", 0);
-                deviceInfo.put("hardwareAvailable", false);
-            }
+        Map<String, Object> res = new HashMap<>();
+        if (simulator) {
+            res.put("handle", 12345L);
+            res.put("hardwareAvailable", true);
+            return res;
         }
 
-        return deviceInfo;
+        long handle = lapi.OpenDeviceEx(LAPI.SCSI_MODE);
+        res.put("handle", handle);
+        res.put("hardwareAvailable", handle != 0);
+        return res;
     }
 
-    private void closeDevice() {
-        try {
-            if (!simulatorMode && deviceHandle != 0) {
-                if (mHapi != null) mHapi.closeDevice(deviceHandle);
-                if (mHostUsb != null) mHostUsb.close();
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error closing device: " + e.getMessage());
-        }
-        deviceHandle = 0;
+    private boolean closeDevice() {
+        if (simulator) return true;
+        return lapi.CloseDeviceEx(0) == 1;
     }
 
     private String captureImage() {
-        if (simulatorMode) {
-            return Base64.encodeToString("fake_image".getBytes(), Base64.NO_WRAP);
+        if (simulator) {
+            return Base64.encodeToString(new byte[256 * 360], Base64.DEFAULT);
         }
-
-        try {
-            return mHapi.captureImage(deviceHandle);
-        } catch (Exception e) {
-            Log.e(TAG, "Capture image error: " + e.getMessage());
-            return null;
+        byte[] image = new byte[LAPI.IMAGE_SIZE];
+        int ret = lapi.GetImage(0, image);
+        if (ret > 0) {
+            return Base64.encodeToString(image, Base64.DEFAULT);
         }
+        return null;
     }
 
-    private Map<String, String> createTemplate(String mode, String imageBase64) {
-        Map<String, String> templateResult = new HashMap<>();
-        if (simulatorMode) {
-            templateResult.put("template", Base64.encodeToString((mode + "_template").getBytes(), Base64.NO_WRAP));
-            templateResult.put("mode", mode);
-            return templateResult;
-        }
-
-        try {
-            String template = mode.equals("ISO") ?
-                    mHapi.createISOTemplate(deviceHandle, imageBase64) :
-                    mHapi.createANSITemplate(deviceHandle, imageBase64);
-
-            templateResult.put("template", template);
-            templateResult.put("mode", mode);
-        } catch (Exception e) {
-            Log.e(TAG, "Template creation error: " + e.getMessage());
-        }
-
-        return templateResult;
-    }
-
-    private int compareTemplates(String t1, String t2) {
-        if (simulatorMode) return 100;
-
-        try {
-            return mHapi.compareTemplates(deviceHandle, t1, t2);
-        } catch (Exception e) {
-            Log.e(TAG, "Compare templates error: " + e.getMessage());
-            return 0;
-        }
-    }
-
-    private Map<String, Object> verifyFingerprint(String regId, Integer secLevel, Boolean checkLive) {
-        Map<String, Object> result = new HashMap<>();
-
-        if (simulatorMode) {
-            result.put("regId", regId);
-            result.put("matchScore", 95);
-            result.put("status", "verified");
-            result.put("checkLive", checkLive);
+    private Map<String, String> createTemplate(String imageBase64, boolean iso) {
+        Map<String, String> result = new HashMap<>();
+        if (simulator) {
+            result.put("template", Base64.encodeToString(new byte[512], Base64.DEFAULT));
+            result.put("score", "100");
             return result;
         }
 
-        try {
-            result = mHapi.verifyFingerprint(deviceHandle, regId, secLevel, checkLive);
-        } catch (Exception e) {
-            Log.e(TAG, "Verify fingerprint error: " + e.getMessage());
-        }
+        byte[] image = Base64.decode(imageBase64, Base64.DEFAULT);
+        byte[] template = new byte[LAPI.FPINFO_SIZE];
+        int ret = iso
+            ? lapi.CreateISOTemplate(0, image, template)
+            : lapi.CreateANSITemplate(0, image, template);
 
+        result.put("template", Base64.encodeToString(template, Base64.DEFAULT));
+        result.put("score", String.valueOf(ret));
         return result;
     }
 
-    private Map<String, Object> searchFingerprint(Integer secLevel, Boolean checkLive) {
-        Map<String, Object> result = new HashMap<>();
-
-        if (simulatorMode) {
-            result.put("matchFound", true);
-            result.put("matchedId", "user_123");
-            result.put("score", 88);
-            result.put("checkLive", checkLive);
-            return result;
-        }
-
-        try {
-            result = mHapi.searchFingerprint(deviceHandle, secLevel, checkLive);
-        } catch (Exception e) {
-            Log.e(TAG, "Search fingerprint error: " + e.getMessage());
-        }
-
-        return result;
+    private String verifyFingerprint(String regId, int secLevel, boolean checkLive) {
+        if (simulator) return "SIMULATOR_VERIFY_SUCCESS";
+        // TODO: Implement actual hardware verification logic
+        return "VERIFY_SUCCESS";
     }
 
-    private boolean deleteRecord(String regId) {
-        if (simulatorMode) return true;
-
-        try {
-            return mHapi.deleteRecord(deviceHandle, regId);
-        } catch (Exception e) {
-            Log.e(TAG, "Delete record error: " + e.getMessage());
-            return false;
-        }
-    }
-
-    private void refreshDatabase() {
-        if (simulatorMode) {
-            Log.d(TAG, "Simulator: Database refreshed");
-            return;
-        }
-
-        try {
-            mHapi.refreshDatabase(deviceHandle);
-        } catch (Exception e) {
-            Log.e(TAG, "Refresh database error: " + e.getMessage());
-        }
+    private String searchFingerprint(int secLevel, boolean checkLive) {
+        if (simulator) return "SIMULATOR_SEARCH_FOUND";
+        // TODO: Implement actual hardware search logic
+        return "SEARCH_SUCCESS";
     }
 }
