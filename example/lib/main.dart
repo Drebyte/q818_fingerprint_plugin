@@ -1,162 +1,109 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:fingerprint_sdk/fingerprint_sdk.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  // 🔹 Catch Flutter errors
-  FlutterError.onError = (FlutterErrorDetails details) {
-    debugPrint('❌ FlutterError: ${details.exception}');
-    debugPrint('Stack trace:\n${details.stack}');
-  };
-
-  // 🔹 Catch all async errors
-  PlatformDispatcher.instance.onError = (error, stack) {
-    debugPrint('🚨 Uncaught async error: $error');
-    debugPrint('Stack trace:\n$stack');
-    return true;
-  };
-
-  debugPrint('🚀 App starting... preparing to launch SDK Demo');
-
-  runApp(const MyApp());
-}
+void main() => runApp(const MyApp());
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('🧩 Building MyApp widget');
-    return MaterialApp(
-      title: 'Fingerprint SDK Demo',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: const FingerprintDemoPage(),
+    return const MaterialApp(
+      home: FingerprintTestPage(),
     );
   }
 }
 
-class FingerprintDemoPage extends StatefulWidget {
-  const FingerprintDemoPage({super.key});
+class FingerprintTestPage extends StatefulWidget {
+  const FingerprintTestPage({super.key});
 
   @override
-  FingerprintDemoPageState createState() => FingerprintDemoPageState();
+  _FingerprintTestPageState createState() => _FingerprintTestPageState();
 }
 
-class FingerprintDemoPageState extends State<FingerprintDemoPage> {
-  String _status = "Launching...";
-  bool _isSimulator = true;
-  String? _captureImageBase64;
-  Map<String, String>? _isoTemplate;
-  Map<String, String>? _ansiTemplate;
+class _FingerprintTestPageState extends State<FingerprintTestPage> {
+  String status = "Idle";
+  String? template1;
+  String? template2;
+  bool simulatorMode = true;
 
   @override
   void initState() {
     super.initState();
-    debugPrint('🔧 FingerprintDemoPageState initialized');
-    _initializeSdk();
+    initializeSdk();
   }
 
-  Future<void> _initializeSdk() async {
-    debugPrint('🧠 Starting SDK initialization (simulator=$_isSimulator)...');
-    setState(() => _status = "Initializing SDK...");
+  Future<void> initializeSdk() async {
+    bool init = await FingerprintSdk.initialize(simulator: simulatorMode);
+    setState(() => status = init ? "✅ SDK Initialized" : "❌ Initialization Failed");
+  }
 
-    try {
-      final initialized = await FingerprintSdk.initialize(simulator: true);
-      debugPrint('✅ SDK initialize() returned: $initialized');
-      setState(() {
-        _isSimulator = true;
-        _status = initialized
-            ? "SDK Initialized (Simulator Mode)"
-            : "SDK Initialization Failed";
-      });
-    } catch (e, stack) {
-      debugPrint('❌ Error during SDK initialization: $e');
-      debugPrint('Stack trace:\n$stack');
-      setState(() => _status = "Error initializing SDK: $e");
+  Future<void> openDevice() async {
+    final res = await FingerprintSdk.openDevice();
+    if (res != null) {
+      setState(() => status = "Device Opened: ${res['hardwareAvailable']}");
+    } else {
+      setState(() => status = "Failed to open device");
     }
   }
 
-  Future<void> _captureImage() async {
-    debugPrint('📸 Capture fingerprint triggered');
-    if (_isSimulator) {
-      debugPrint('🧪 Simulator mode active, simulating capture');
-      setState(() {
-        _captureImageBase64 = "SIMULATED_IMAGE_BASE64";
-        _status = "Simulator: Fingerprint image captured.";
-      });
+  Future<void> captureAndCreate(bool isFirst) async {
+    setState(() => status = "Capturing image...");
+    final img = await FingerprintSdk.captureImage();
+    if (img == null) {
+      setState(() => status = "Image capture failed");
       return;
     }
 
-    try {
-      setState(() => _status = "Capturing fingerprint...");
-      final imageBase64 = await FingerprintSdk.captureImage();
-      debugPrint('📷 Capture result: ${imageBase64 != null ? "OK" : "NULL"}');
-      setState(() {
-        _captureImageBase64 = imageBase64;
-        _status =
-            imageBase64 != null ? "Fingerprint captured" : "Capture failed";
-      });
-    } catch (e, stack) {
-      debugPrint('❌ Error capturing fingerprint: $e');
-      debugPrint('Stack trace:\n$stack');
-      setState(() => _status = "Error capturing fingerprint: $e");
-    }
-  }
-
-  Future<void> _createTemplates() async {
-    debugPrint('🧩 Creating fingerprint templates');
-    if (_captureImageBase64 == null) {
-      setState(() => _status = "No fingerprint image captured");
+    setState(() => status = "Creating ISO template...");
+    final tmpl = await FingerprintSdk.createISOTemplate(img);
+    if (tmpl == null) {
+      setState(() => status = "Template creation failed");
       return;
     }
 
-    try {
-      if (_isSimulator) {
-        debugPrint('🧪 Simulator: generating fake templates');
-        _isoTemplate = {'template': 'SIMULATED_ISO_TEMPLATE'};
-        _ansiTemplate = {'template': 'SIMULATED_ANSI_TEMPLATE'};
-        setState(() => _status = "Templates created (Simulator)");
-        return;
+    setState(() {
+      if (isFirst) {
+        template1 = tmpl['template'];
+        status = "Template 1 created";
+      } else {
+        template2 = tmpl['template'];
+        status = "Template 2 created";
       }
+    });
+  }
 
-      setState(() => _status = "Creating templates...");
-      _isoTemplate = await FingerprintSdk.createISOTemplate(_captureImageBase64!);
-      _ansiTemplate = await FingerprintSdk.createANSITemplate(_captureImageBase64!);
-      debugPrint('✅ Templates created successfully');
-      setState(() => _status = "Templates created successfully");
-    } catch (e, stack) {
-      debugPrint('❌ Error creating templates: $e');
-      debugPrint('Stack trace:\n$stack');
-      setState(() => _status = "Error creating templates: $e");
+  Future<void> compareTemplates() async {
+    if (template1 == null || template2 == null) {
+      setState(() => status = "⚠️ Both templates required");
+      return;
     }
+    final score = await FingerprintSdk.compareTemplates(template1!, template2!);
+    setState(() => status = "Match score: $score");
   }
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('🧱 Building FingerprintDemoPage UI');
     return Scaffold(
-      appBar: AppBar(title: const Text("Fingerprint SDK Demo")),
+      appBar: AppBar(title: const Text("Fingerprint SDK Example")),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Status: $_status"),
+            Text("Status: $status", style: const TextStyle(fontSize: 18)),
             const SizedBox(height: 20),
-            ElevatedButton(
-              onPressed: _initializeSdk,
-              child: const Text("Re-Initialize SDK (Simulator)"),
-            ),
-            ElevatedButton(
-              onPressed: _captureImage,
-              child: const Text("Capture Image"),
-            ),
-            ElevatedButton(
-              onPressed: _createTemplates,
-              child: const Text("Create Templates"),
+            ElevatedButton(onPressed: openDevice, child: const Text("Open Device")),
+            ElevatedButton(onPressed: () => captureAndCreate(true), child: const Text("Capture Template 1")),
+            ElevatedButton(onPressed: () => captureAndCreate(false), child: const Text("Capture Template 2")),
+            ElevatedButton(onPressed: compareTemplates, child: const Text("Compare Templates")),
+            const SizedBox(height: 20),
+            SwitchListTile(
+              title: const Text("Simulator Mode"),
+              value: simulatorMode,
+              onChanged: (val) {
+                setState(() => simulatorMode = val);
+                initializeSdk();
+              },
             ),
           ],
         ),
