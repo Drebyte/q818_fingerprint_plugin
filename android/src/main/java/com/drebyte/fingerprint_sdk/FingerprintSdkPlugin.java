@@ -1,17 +1,14 @@
 package com.drebyte.fingerprint_sdk;
 
-import android.app.Activity;
-import android.os.Build;
-import android.util.Base64;
-import android.util.Log;
-
 import androidx.annotation.NonNull;
+
+import android.app.Activity;
+import android.util.Base64;
+
+import com.HZFINGER.LAPI;
 
 import java.util.HashMap;
 import java.util.Map;
-
-import com.HZFINGER.HostUsb;
-import com.HZFINGER.LAPI;
 
 import io.flutter.embedding.engine.plugins.FlutterPlugin;
 import io.flutter.embedding.engine.plugins.activity.ActivityAware;
@@ -21,180 +18,139 @@ import io.flutter.plugin.common.MethodCall;
 import io.flutter.plugin.common.MethodChannel;
 
 public class FingerprintSdkPlugin implements FlutterPlugin, MethodChannel.MethodCallHandler, ActivityAware {
-    private static final String TAG = "FingerprintSdkPlugin";
-
-    private MethodChannel methodChannel;
+    private MethodChannel channel;
     private EventChannel eventChannel;
     private Activity activity;
-    private static LAPI lapi;
-    private boolean simulator = false;
+    private LAPI lapi;
+    private boolean simulatorMode = false;
+    private long deviceHandle = 0;
 
     @Override
     public void onAttachedToEngine(@NonNull FlutterPluginBinding binding) {
-        methodChannel = new MethodChannel(binding.getBinaryMessenger(), "fingerprint_sdk");
-        methodChannel.setMethodCallHandler(this);
-
+        channel = new MethodChannel(binding.getBinaryMessenger(), "fingerprint_sdk");
         eventChannel = new EventChannel(binding.getBinaryMessenger(), "fingerprint_sdk/events");
-        eventChannel.setStreamHandler(new EventChannel.StreamHandler() {
-            @Override
-            public void onListen(Object arguments, EventChannel.EventSink events) {
-                // Could send events from hardware here
-            }
-            @Override
-            public void onCancel(Object arguments) {}
-        });
+        channel.setMethodCallHandler(this);
+    }
+
+    @Override
+    public void onMethodCall(@NonNull MethodCall call, @NonNull MethodChannel.Result result) {
+        switch (call.method) {
+            case "initialize":
+                simulatorMode = call.argument("simulator");
+                lapi = new LAPI(activity);
+                result.success(true);
+                break;
+
+            case "openDevice":
+                if (simulatorMode) {
+                    Map<String, Object> info = new HashMap<>();
+                    info.put("status", "simulator");
+                    result.success(info);
+                    return;
+                }
+                deviceHandle = lapi.OpenDeviceEx(LAPI.SCSI_MODE);
+                if (deviceHandle > 0) {
+                    Map<String, Object> info = new HashMap<>();
+                    info.put("status", "device_opened");
+                    info.put("handle", deviceHandle);
+                    result.success(info);
+                } else {
+                    result.error("DEVICE_ERROR", "Failed to open device", null);
+                }
+                break;
+
+            case "closeDevice":
+                if (!simulatorMode && deviceHandle > 0) {
+                    boolean closed = lapi.CloseDeviceEx(deviceHandle) == 1;
+                    result.success(closed);
+                    return;
+                }
+                result.success(true);
+                break;
+
+            case "captureImage":
+                if (simulatorMode) {
+                    result.success("SIMULATOR_IMAGE_BASE64");
+                    return;
+                }
+                try {
+                    byte[] image = new byte[LAPI.IMAGE_SIZE];
+                    int ret = lapi.GetImage(deviceHandle, image);
+                    if (ret > 0) {
+                        String base64Image = Base64.encodeToString(image, Base64.NO_WRAP);
+                        result.success(base64Image);
+                    } else {
+                        result.error("CAPTURE_ERROR", "Failed to capture fingerprint", null);
+                    }
+                } catch (Exception e) {
+                    result.error("CAPTURE_EXCEPTION", e.getMessage(), null);
+                }
+                break;
+
+            case "createISOTemplate":
+                String imgBase64 = call.argument("imageBase64");
+                if (imgBase64 == null) {
+                    result.error("INVALID_ARGUMENT", "imageBase64 is null", null);
+                    return;
+                }
+                byte[] imgBytes = Base64.decode(imgBase64, Base64.NO_WRAP);
+                byte[] isoTemplate = new byte[LAPI.FPINFO_SIZE];
+                int isoRet = lapi.CreateISOTemplate(deviceHandle, imgBytes, isoTemplate);
+                if (isoRet > 0) {
+                    result.success(Map.of("template", Base64.encodeToString(isoTemplate, Base64.NO_WRAP)));
+                } else {
+                    result.error("ISO_ERROR", "Failed to create ISO template", null);
+                }
+                break;
+
+            case "createANSITemplate":
+                String ansiImgBase64 = call.argument("imageBase64");
+                if (ansiImgBase64 == null) {
+                    result.error("INVALID_ARGUMENT", "imageBase64 is null", null);
+                    return;
+                }
+                byte[] ansiImgBytes = Base64.decode(ansiImgBase64, Base64.NO_WRAP);
+                byte[] ansiTemplate = new byte[LAPI.FPINFO_SIZE];
+                int ansiRet = lapi.CreateANSITemplate(deviceHandle, ansiImgBytes, ansiTemplate);
+                if (ansiRet > 0) {
+                    result.success(Map.of("template", Base64.encodeToString(ansiTemplate, Base64.NO_WRAP)));
+                } else {
+                    result.error("ANSI_ERROR", "Failed to create ANSI template", null);
+                }
+                break;
+
+            case "compareTemplates":
+                String tmpl1 = call.argument("template1");
+                String tmpl2 = call.argument("template2");
+                if (tmpl1 == null || tmpl2 == null) {
+                    result.error("INVALID_ARGUMENT", "Templates are null", null);
+                    return;
+                }
+                byte[] tmpl1Bytes = Base64.decode(tmpl1, Base64.NO_WRAP);
+                byte[] tmpl2Bytes = Base64.decode(tmpl2, Base64.NO_WRAP);
+                int score = lapi.CompareTemplates(deviceHandle, tmpl1Bytes, tmpl2Bytes);
+                result.success(score);
+                break;
+
+            default:
+                result.notImplemented();
+        }
     }
 
     @Override
     public void onDetachedFromEngine(@NonNull FlutterPluginBinding binding) {
-        methodChannel.setMethodCallHandler(null);
+        channel.setMethodCallHandler(null);
     }
 
     @Override
     public void onAttachedToActivity(ActivityPluginBinding binding) {
         activity = binding.getActivity();
-        lapi = new LAPI(activity);
     }
 
     @Override
-    public void onDetachedFromActivityForConfigChanges() {
-        activity = null;
-    }
-
+    public void onDetachedFromActivityForConfigChanges() {}
     @Override
-    public void onReattachedToActivityForConfigChanges(ActivityPluginBinding binding) {
-        activity = binding.getActivity();
-        lapi = new LAPI(activity);
-    }
-
+    public void onReattachedToActivityForConfigChanges(ActivityPluginBinding binding) {}
     @Override
-    public void onDetachedFromActivity() {
-        activity = null;
-    }
-
-    @Override
-    public void onMethodCall(MethodCall call, MethodChannel.Result result) {
-        try {
-            switch (call.method) {
-                case "initialize":
-                    simulator = call.argument("simulator");
-                    result.success(initialize(simulator));
-                    break;
-
-                case "getPlatformVersion":
-                    result.success("Android " + Build.VERSION.RELEASE);
-                    break;
-
-                case "openDevice":
-                    result.success(openDevice());
-                    break;
-
-                case "closeDevice":
-                    result.success(closeDevice());
-                    break;
-
-                case "captureImage":
-                    result.success(captureImage());
-                    break;
-
-                case "createISOTemplate":
-                    String isoBase64 = call.argument("imageBase64");
-                    result.success(createTemplate(isoBase64, true));
-                    break;
-
-                case "createANSITemplate":
-                    String ansiBase64 = call.argument("imageBase64");
-                    result.success(createTemplate(ansiBase64, false));
-                    break;
-
-                case "verifyFingerprint":
-                    String regId = call.argument("regId");
-                    int secLevel = call.argument("secLevel");
-                    boolean checkLive = call.argument("checkLive");
-                    result.success(verifyFingerprint(regId, secLevel, checkLive));
-                    break;
-
-                case "searchFingerprint":
-                    int level = call.argument("secLevel");
-                    boolean live = call.argument("checkLive");
-                    result.success(searchFingerprint(level, live));
-                    break;
-
-                default:
-                    result.notImplemented();
-                    break;
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error: " + e.getMessage());
-            result.error("ERROR", e.getMessage(), null);
-        }
-    }
-
-    private boolean initialize(boolean simulatorMode) {
-        this.simulator = simulatorMode;
-        Log.i(TAG, "Fingerprint SDK initialized in " + (simulator ? "SIMULATOR" : "HARDWARE") + " mode");
-        return true;
-    }
-
-    private Map<String, Object> openDevice() {
-        Map<String, Object> res = new HashMap<>();
-        if (simulator) {
-            res.put("handle", 12345L);
-            res.put("hardwareAvailable", true);
-            return res;
-        }
-
-        long handle = lapi.OpenDeviceEx(LAPI.SCSI_MODE);
-        res.put("handle", handle);
-        res.put("hardwareAvailable", handle != 0);
-        return res;
-    }
-
-    private boolean closeDevice() {
-        if (simulator) return true;
-        return lapi.CloseDeviceEx(0) == 1;
-    }
-
-    private String captureImage() {
-        if (simulator) {
-            return Base64.encodeToString(new byte[256 * 360], Base64.DEFAULT);
-        }
-        byte[] image = new byte[LAPI.IMAGE_SIZE];
-        int ret = lapi.GetImage(0, image);
-        if (ret > 0) {
-            return Base64.encodeToString(image, Base64.DEFAULT);
-        }
-        return null;
-    }
-
-    private Map<String, String> createTemplate(String imageBase64, boolean iso) {
-        Map<String, String> result = new HashMap<>();
-        if (simulator) {
-            result.put("template", Base64.encodeToString(new byte[512], Base64.DEFAULT));
-            result.put("score", "100");
-            return result;
-        }
-
-        byte[] image = Base64.decode(imageBase64, Base64.DEFAULT);
-        byte[] template = new byte[LAPI.FPINFO_SIZE];
-        int ret = iso
-            ? lapi.CreateISOTemplate(0, image, template)
-            : lapi.CreateANSITemplate(0, image, template);
-
-        result.put("template", Base64.encodeToString(template, Base64.DEFAULT));
-        result.put("score", String.valueOf(ret));
-        return result;
-    }
-
-    private String verifyFingerprint(String regId, int secLevel, boolean checkLive) {
-        if (simulator) return "SIMULATOR_VERIFY_SUCCESS";
-        // TODO: Implement actual hardware verification logic
-        return "VERIFY_SUCCESS";
-    }
-
-    private String searchFingerprint(int secLevel, boolean checkLive) {
-        if (simulator) return "SIMULATOR_SEARCH_FOUND";
-        // TODO: Implement actual hardware search logic
-        return "SEARCH_SUCCESS";
-    }
+    public void onDetachedFromActivity() {}
 }
